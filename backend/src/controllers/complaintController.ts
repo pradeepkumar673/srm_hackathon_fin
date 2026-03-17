@@ -155,6 +155,28 @@ export const reportComplaint = async (
       lng,
     } = req.body;
 
+    // Normalize category coming from frontend/UI (often lowercase keys)
+    const normalizeCategory = (raw: unknown): 'Pothole' | 'Garbage' | 'Broken Street Light' | 'Water Leakage' | 'Road Damage' => {
+      const v = String(raw || '').trim();
+      const lower = v.toLowerCase();
+      const map: Record<string, 'Pothole' | 'Garbage' | 'Broken Street Light' | 'Water Leakage' | 'Road Damage'> = {
+        pothole: 'Pothole',
+        garbage: 'Garbage',
+        streetlight: 'Broken Street Light',
+        'broken street light': 'Broken Street Light',
+        waterleakage: 'Water Leakage',
+        'water leakage': 'Water Leakage',
+        roadcrack: 'Road Damage',
+        'road damage': 'Road Damage',
+        other: 'Road Damage',
+      };
+      // If already valid enum, keep it
+      const valid = ['Pothole', 'Garbage', 'Broken Street Light', 'Water Leakage', 'Road Damage'];
+      if (valid.includes(v)) return v as any;
+      return map[lower] || 'Road Damage';
+    };
+    const normalizedCategory = normalizeCategory(category);
+
     // Validate required fields
     if (!title || !description || !lat || !lng) {
       res.status(400).json({
@@ -205,7 +227,7 @@ export const reportComplaint = async (
     console.log('🔍 Checking for duplicates within 50m...');
     const bbox50m = getBoundingBox({ lat: latitude, lng: longitude }, 50);
     const recentDuplicate = await Complaint.findOne({
-      category: category || 'Road Damage',
+      category: normalizedCategory,
       status: { $ne: 'Resolved' },
       'location.lat': { $gte: bbox50m.minLat, $lte: bbox50m.maxLat },
       'location.lng': { $gte: bbox50m.minLng, $lte: bbox50m.maxLng },
@@ -248,7 +270,7 @@ export const reportComplaint = async (
     // Use AI-determined category if confidence > 60%, else keep user's
     const finalCategory = detections.length > 0 && groqResult.category
       ? groqResult.category
-      : (category || groqResult.category);
+      : (normalizedCategory || groqResult.category);
 
     // ==============================================================
     // STEP 5: OpenWeatherMap Forecast (Feature #4)
