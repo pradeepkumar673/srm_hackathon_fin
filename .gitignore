@@ -1,0 +1,63 @@
+# Dependencies
+**/node_modules/
+.env.example
+**/.env.example
+
+# Build output
+**/dist/
+**/build/
+**/.next/
+**/.nuxt/
+**/.output/
+
+# TypeScript cache
+**/*.tsbuildinfo
+
+# Logs
+**/logs/
+**/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime data
+**/pids/
+**/*.pid
+**/*.seed
+**/*.pid.lock
+
+# Coverage
+**/coverage/
+**/.nyc_output/
+
+# Env files (keep templates like .env.example)
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.sample
+
+# Uploads / user-generated content (backend stores local photos)
+backend/uploads/
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDEs
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+*.iml
+
+# Misc
+**/*.swp
+**/*.swo
+**/.cache/
+
