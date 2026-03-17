@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Loader2, Languages, ShieldCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { authAPI } from '../api'
 
 export default function Login() {
   const [email, setEmail]       = useState('')
@@ -32,42 +33,40 @@ export default function Login() {
     login:    'Sign in',
     noAccount:'Don\'t have an account?',
     register: 'Register',
-    demo:     'Demo credentials',
   }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     if (!email || !password) { toast.error('Please fill all fields'); return }
     setLoading(true)
-    await new Promise(r => setTimeout(r, 1000))
-    setLoading(false)
+    try {
+      const res = await authAPI.login(email.trim(), password)
+      const token = res.data?.token as string | undefined
+      const user = res.data?.user as { name?: string; role?: string; language?: string } | undefined
 
-    // Role detection from email for demo
-    if (email.includes('admin')) {
-      localStorage.setItem('civic_role', 'admin')
-      localStorage.setItem('civic_token', 'mock-admin-token')
-      navigate('/admin')
-    } else if (email.includes('worker')) {
-      localStorage.setItem('civic_role', 'worker')
-      localStorage.setItem('civic_token', 'mock-worker-token')
-      navigate('/worker')
-    } else {
-      localStorage.setItem('civic_role', 'citizen')
-      localStorage.setItem('civic_token', 'mock-citizen-token')
-      navigate('/dashboard')
-    }
-    toast.success('Welcome back! 👋')
-  }
+      if (!token || !user?.role) {
+        throw new Error('Invalid login response')
+      }
 
-  function fillDemo(role: string) {
-    const map: Record<string, [string, string]> = {
-      citizen: ['citizen@example.com', 'demo123'],
-      admin:   ['admin@example.com',   'demo123'],
-      worker:  ['worker@example.com',  'demo123'],
+      localStorage.setItem('civic_token', token)
+      localStorage.setItem('civic_role', user.role)
+      if (user.name) localStorage.setItem('civic_name', user.name)
+      if (user.language) localStorage.setItem('civic_language', user.language)
+
+      if (user.role === 'admin') navigate('/admin')
+      else if (user.role === 'worker') navigate('/worker')
+      else navigate('/dashboard')
+
+      toast.success(tamil ? 'மீண்டும் வரவேற்கிறோம்!' : 'Welcome back!')
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Login failed. Please try again.'
+      toast.error(msg)
+    } finally {
+      setLoading(false)
     }
-    const [e, p] = map[role]
-    setEmail(e); setPassword(p)
-    toast.success(`${role} credentials filled`)
   }
 
   return (
@@ -155,25 +154,6 @@ export default function Login() {
               {loading ? <Loader2 size={16} className="animate-spin" /> : T.login}
             </motion.button>
           </form>
-
-          {/* Demo credentials */}
-          <div className="mt-5 p-3 rounded-xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
-            <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>
-              🔑 {T.demo}
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              {['citizen', 'admin', 'worker'].map(role => (
-                <button
-                  key={role}
-                  onClick={() => fillDemo(role)}
-                  className="text-xs px-3 py-1.5 rounded-lg font-medium border capitalize transition-all hover:border-orange-400 hover:text-orange-400"
-                  style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'var(--bg-card)' }}
-                >
-                  {role}
-                </button>
-              ))}
-            </div>
-          </div>
 
           <p className="text-center mt-4 text-xs" style={{ color: 'var(--text-muted)' }}>
             {T.noAccount}{' '}

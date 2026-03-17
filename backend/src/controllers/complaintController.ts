@@ -32,6 +32,7 @@ import { Notification } from '../models/Worker';
 import {
   callRoboflow,
   callGroqAnalysis,
+  callGroqPrefill,
   callFakeDetector,
   computeSeverityScore,
   getWeatherData,
@@ -51,6 +52,76 @@ import { getFileUrl } from '../middleware/upload';
 let io: SocketServer;
 export const setSocketIO = (socketIO: SocketServer): void => {
   io = socketIO;
+};
+
+// ==============================================================
+// POST /api/complaints/analyze
+// Auto-fill form from photo upload
+// ==============================================================
+export const analyzePhoto = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ success: false, message: 'Photo is required for analysis.' });
+      return;
+    }
+
+    const imagePath = req.file.path;
+    const userLanguage = req.user?.language || 'en';
+    const userHint = typeof req.body?.hint === 'string' ? req.body.hint : '';
+
+    console.log(`\n📸 Analyzing photo for auto-fill...`);
+    
+    // 1. Fake/Spam Detection
+    const fakeScore = await callFakeDetector(imagePath);
+    const isFake = fakeScore > 70;
+
+    // 2. Roboflow Object Detection
+    const detections = await callRoboflow(imagePath);
+
+    // 3. Groq Prefill (title/category/description + approx size)
+    const prefill = await callGroqPrefill(detections, userHint, userLanguage);
+
+    // Lightweight preview severity (no GPS factors)
+    const avgArea =
+      detections.length > 0
+        ? detections.reduce((sum, d) => sum + d.width * d.height, 0) / detections.length
+        : 0;
+    const sizeBoost = Math.min(avgArea / 307200, 1) * 20; // same scale as computeSeverityScore()
+    const severityScore = Math.max(0, Math.min(100, Math.round((prefill.severity || 30) + sizeBoost)));
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        category: prefill.category,
+        title: prefill.title,
+        description: prefill.description,
+        approxSize: prefill.approxSize,
+        keyDetails: prefill.keyDetails,
+        tags: prefill.tags,
+        isFake,
+        fakeScore,
+        fakeReason: isFake ? `Our AI detected this image may be fake (${fakeScore}% confidence).` : undefined,
+        severityScore,
+        confidence: detections.length > 0 ? Math.round(detections[0].confidence * 100) : 50,
+        detectedObjects: detections.map((d) => ({
+          class: d.class,
+          confidence: Math.round(d.confidence * 100),
+          bboxPx: { width: Math.round(d.width), height: Math.round(d.height) },
+        })),
+      }
+    });
+
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Photo analysis failed';
+    console.error('❌ analyzePhoto error:', message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to analyze photo.',
+    });
+  }
 };
 
 // ==============================================================

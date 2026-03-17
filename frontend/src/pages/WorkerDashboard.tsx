@@ -58,7 +58,7 @@ export default function WorkerDashboard() {
     if (!resolveId) return
     setSubmitting(true)
     await new Promise(r => setTimeout(r, 1500))
-    setTasks(prev => prev.map(t => t.id === resolveId ? { ...t, status: 'resolved', resolvedPhoto } : t))
+    setTasks(prev => prev.map(t => t.id === resolveId ? { ...t, status: 'resolved', resolvedPhoto: resolvePhoto ?? undefined } : t))
     emit('resolve-task', { taskId: resolveId, afterPhotoUrl: resolvePhoto })
     setSubmitting(false)
     setResolveId(null)
@@ -72,7 +72,12 @@ export default function WorkerDashboard() {
     <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }}>
       <header className="sticky top-0 z-50 px-4 py-3 flex items-center gap-3"
               style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-        <Link to="/login" onClick={() => localStorage.clear()}
+        <Link to="/login" onClick={() => {
+          localStorage.removeItem('civic_token')
+          localStorage.removeItem('civic_role')
+          localStorage.removeItem('civic_name')
+          localStorage.removeItem('civic_language')
+        }}
               className="w-8 h-8 rounded-xl flex items-center justify-center border"
               style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
           <ChevronLeft size={16} />

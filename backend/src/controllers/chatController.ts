@@ -85,7 +85,7 @@ export const handleChat = async (
           : 'Complaint not found.';
       } else {
         const workerInfo = complaint.workerId
-          ? `Worker: ${(complaint.workerId as { name: string }).name}`
+          ? `Worker: ${(complaint.workerId as unknown as { name: string }).name}`
           : 'No worker assigned yet.';
 
         reply = user.language === 'ta'

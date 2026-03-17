@@ -15,8 +15,9 @@ import 'leaflet/dist/leaflet.css'
 import { motion } from 'framer-motion'
 import { Navigation, Layers, Cloud } from 'lucide-react'
 import SeverityBadge from './SeverityBadge'
-import { MOCK_COMPLAINTS, MOCK_WORKERS, severityLabel, statusClass, timeAgo } from '../lib/utils'
+import { severityLabel, statusClass, timeAgo } from '../lib/utils'
 import { useSocket } from '../hooks/useSocket'
+import { complaintsAPI } from '../api'
 
 // Fix default icon paths for Vite
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl
@@ -83,9 +84,28 @@ export default function LeafletMap({ mode = 'admin', onPinSelect, selectedPin, h
   const [showHeatmap, setShowHeatmap]     = useState(true)
   const [showWorkers, setShowWorkers]     = useState(true)
   const [rainMode, setRainMode]           = useState(false)
+  const [complaints, setComplaints]       = useState<any[]>([])
   const [workerPositions, setWorkerPositions] = useState<WorkerPos[]>(
-    MOCK_WORKERS.map(w => ({ workerId: w.id, workerName: w.name, lat: w.location.lat, lng: w.location.lng }))
+    []
   )
+
+  // Load map complaints (removes hardcoded MOCK_COMPLAINTS)
+  useEffect(() => {
+    let mounted = true
+    if (mode !== 'admin' && mode !== 'citizen') return
+
+    ;(async () => {
+      try {
+        const res = await complaintsAPI.getPublic()
+        if (!mounted) return
+        setComplaints(res.data?.complaints ?? [])
+      } catch {
+        // keep map usable even if backend is offline
+      }
+    })()
+
+    return () => { mounted = false }
+  }, [mode])
 
   // Live worker location updates via Socket.io
   useSocket({
@@ -186,11 +206,11 @@ export default function LeafletMap({ mode = 'admin', onPinSelect, selectedPin, h
         )}
 
         {/* Complaint markers */}
-        {(mode === 'admin' || mode === 'citizen') && MOCK_COMPLAINTS.map(c => (
+        {(mode === 'admin' || mode === 'citizen') && complaints.map(c => (
           <Marker
-            key={c.id}
+            key={c._id || c.id}
             position={[c.location.lat, c.location.lng]}
-            icon={severityIcon(rainMode && c.category === 'pothole' ? Math.min(100, c.severity * 1.5) : c.severity)}
+            icon={severityIcon(rainMode && String(c.category || '').toLowerCase() === 'pothole' ? Math.min(100, Number(c.severityScore ?? 0) * 1.5) : Number(c.severityScore ?? 0))}
           >
             <Popup>
               <div className="w-52 font-body">
@@ -200,31 +220,26 @@ export default function LeafletMap({ mode = 'admin', onPinSelect, selectedPin, h
                     {c.status}
                   </span>
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    Sev: {c.severity}{rainMode && c.category === 'pothole' ? ' → ' + Math.min(100, Math.round(c.severity * 1.5)) + '⚡' : ''}
+                    Sev: {Number(c.severityScore ?? 0)}{rainMode && String(c.category || '').toLowerCase() === 'pothole' ? ' → ' + Math.min(100, Math.round(Number(c.severityScore ?? 0) * 1.5)) + '⚡' : ''}
                   </span>
                 </div>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.location.address}</p>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{timeAgo(c.createdAt)}</p>
-                {c.workerEta && (
-                  <p className="text-xs mt-1 font-medium" style={{ color: 'var(--accent-teal)' }}>
-                    🚶 Worker arriving in {c.workerEta}
-                  </p>
-                )}
               </div>
             </Popup>
           </Marker>
         ))}
 
         {/* Heatmap circles (severity-weighted, CSS opacity) */}
-        {mode === 'admin' && showHeatmap && MOCK_COMPLAINTS.map(c => (
+        {mode === 'admin' && showHeatmap && complaints.map(c => (
           <Circle
-            key={`heat-${c.id}`}
+            key={`heat-${c._id || c.id}`}
             center={[c.location.lat, c.location.lng]}
-            radius={rainMode && c.category === 'pothole' ? 600 : 400}
+            radius={rainMode && String(c.category || '').toLowerCase() === 'pothole' ? 600 : 400}
             pathOptions={{
-              color: severityLabel(c.severity).color,
-              fillColor: severityLabel(c.severity).color,
-              fillOpacity: 0.08 + c.severity / 800,
+              color: severityLabel(Number(c.severityScore ?? 0)).color,
+              fillColor: severityLabel(Number(c.severityScore ?? 0)).color,
+              fillOpacity: 0.08 + Number(c.severityScore ?? 0) / 800,
               weight: 0,
             }}
           />

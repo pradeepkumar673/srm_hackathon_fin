@@ -128,7 +128,6 @@ function drawCoverPage(
     width: 250,
     height: 32,
     color: COLORS.secondary,
-    borderRadius: 4,
   });
 
   page.drawText(`📅 ${data.dateRange}`, {
@@ -193,7 +192,7 @@ function drawCoverPage(
   statItems.forEach((stat, i) => {
     const x = 40 + i * 130;
     // Card background
-    page.drawRectangle({ x, y: statsY - 10, width: 120, height: 60, color: COLORS.light, borderRadius: 6 });
+    page.drawRectangle({ x, y: statsY - 10, width: 120, height: 60, color: COLORS.light });
     // Value
     page.drawText(stat.value, { x: x + 10, y: statsY + 25, size: 20, font: bold, color: stat.color });
     // Label
@@ -281,10 +280,10 @@ function drawStatisticsPage(
   yPos -= 20;
 
   const barBgWidth = width - 80;
-  page.drawRectangle({ x: 40, y: yPos, width: barBgWidth, height: 16, color: COLORS.light, borderRadius: 8 });
+  page.drawRectangle({ x: 40, y: yPos, width: barBgWidth, height: 16, color: COLORS.light });
   page.drawRectangle({
     x: 40, y: yPos, width: (resRate / 100) * barBgWidth, height: 16,
-    color: resRate > 70 ? COLORS.success : COLORS.secondary, borderRadius: 8,
+    color: resRate > 70 ? COLORS.success : COLORS.secondary,
   });
 
   // ---- Footer ----

@@ -4,12 +4,13 @@
 // • Voice input (Web Speech API)
 // • Role-aware suggestions (citizen / admin / worker)
 // • Tamil ↔ English toggle
-// • Anthropic API used here for demo (replace with Groq in prod)
+// • Uses backend Groq integration via /api/chat (prod)
 // ─────────────────────────────────────────────────────────────
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MessageCircle, X, Send, Mic, Bot, User, Loader2, Languages } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { chatAPI } from '../api'
 
 interface Message {
   id: string
@@ -73,34 +74,9 @@ export default function AIChatbot({ userRole = 'citizen', userName = 'User' }: P
     setLoading(true)
 
     try {
-      // ── Call Groq Cloud (or Anthropic API for demo) ──────────
-      // In production replace with:
-      // const GROQ_KEY = import.meta.env.VITE_GROQ_API_KEY
-      // fetch('https://api.groq.com/openai/v1/chat/completions', ...)
-      //
-      // For this demo we use the Anthropic API:
-      const systemPrompt = `You are a smart civic assistant for Chennai's AI-SmartCivic platform.
-Role: ${userRole}. User: ${userName}.
-Keep responses concise (2-3 sentences). Respond in the same language as the user.
-If asked in Tamil, respond in Tamil. Be helpful, friendly, and solution-focused.
-You know about: pothole repairs, garbage collection, street lights, water leakages, civic points, report status.`
-
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 200,
-          system: systemPrompt,
-          messages: [
-            ...messages.filter(m => m.id !== '0').map(m => ({ role: m.role, content: m.content })),
-            { role: 'user', content: userMsg },
-          ],
-        }),
-      })
-
-      const data = await res.json()
-      const reply = data?.content?.[0]?.text ?? 'Sorry, I could not process your request right now.'
+      const isVoice = false
+      const res = await chatAPI.send(userMsg, isVoice)
+      const reply = (res.data?.reply as string | undefined) ?? 'Sorry, I could not process your request right now.'
 
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
@@ -130,7 +106,9 @@ You know about: pothole repairs, garbage collection, street lights, water leakag
 
   // Voice input
   function startVoice() {
-    const SR = (window as Window & typeof globalThis).SpeechRecognition || (window as Window & typeof globalThis & { webkitSpeechRecognition: typeof SpeechRecognition }).webkitSpeechRecognition
+    const SR =
+      (window as unknown as Window).SpeechRecognition ||
+      (window as unknown as Window).webkitSpeechRecognition
     if (!SR) { toast.error('Voice not supported'); return }
     const r = new SR()
     r.lang = lang

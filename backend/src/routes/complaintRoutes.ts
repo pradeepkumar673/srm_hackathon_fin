@@ -22,6 +22,7 @@ import {
   getComplaintById,
   getPublicComplaints,
   confirmComplaint,
+  analyzePhoto,
 } from '../controllers/complaintController';
 import { protect, optionalAuth } from '../middleware/auth';
 import { upload, compressImage, handleMulterError } from '../middleware/upload';
@@ -43,6 +44,18 @@ router.post(
   aiLimiter,                 // Rate limit AI API calls
   reportComplaint,
   handleMulterError          // Catch Multer-specific errors
+);
+
+// POST /api/complaints/analyze
+// Analyze photo for auto-filling form
+router.post(
+  '/analyze',
+  protect,
+  upload.single('photo'),
+  compressImage,
+  aiLimiter,
+  analyzePhoto,
+  handleMulterError
 );
 
 // GET /api/complaints/public – Public map feed (no auth required)

@@ -111,8 +111,8 @@ const UserSchema = new Schema<IUser>(
     toJSON: {
       virtuals: true,
       transform: (_doc, ret) => {
-        delete ret.__v;
-        delete ret.passwordHash; // Never expose hash in JSON output
+        delete (ret as any).__v;
+        delete (ret as any).passwordHash; // Never expose hash in JSON output
         return ret;
       },
     },

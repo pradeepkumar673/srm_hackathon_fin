@@ -3,7 +3,7 @@
 // Citizen home: quick-report, stats, recent complaints, map
 // Real-time via Socket.io new-report + status-update events
 // ─────────────────────────────────────────────────────────────
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { Plus, MapPin, Trophy, Clock, CheckCircle, AlertCircle, ChevronRight, Sun, Moon, LogOut } from 'lucide-react'
@@ -13,13 +13,15 @@ import LeafletMap from '../components/LeafletMap'
 import AIChatbot from '../components/AIChatbot'
 import NotificationBell from '../components/NotificationBell'
 import SeverityBadge from '../components/SeverityBadge'
-import { MOCK_COMPLAINTS, MOCK_KPIS, statusClass, timeAgo, CATEGORY_ICONS } from '../lib/utils'
+import { statusClass, timeAgo, CATEGORY_ICONS } from '../lib/utils'
 import { useSocket } from '../hooks/useSocket'
+import { complaintsAPI } from '../api'
 
 export default function CitizenDashboard() {
   const [dark, setDark]         = useState(() => document.documentElement.classList.contains('dark'))
   const [showForm, setShowForm] = useState(false)
-  const [complaints, setComplaints] = useState(MOCK_COMPLAINTS.slice(0, 3))
+  const [complaints, setComplaints] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const name = localStorage.getItem('civic_name') ?? 'Citizen'
 
   function toggleDark() {
@@ -32,17 +34,41 @@ export default function CitizenDashboard() {
       toast('🆕 New report in your area: ' + d.title, { duration: 3000 })
     },
     onStatusUpdate: (d) => {
-      setComplaints(prev => prev.map(c => c.id === d.id ? { ...c, status: d.status } : c))
+      setComplaints(prev => prev.map(c => (c._id === d.id || c.id === d.id) ? { ...c, status: d.status } : c))
       toast.success('Status updated: ' + d.status)
     },
   })
 
-  const stats = [
-    { label: 'My Reports',     value: 4,  icon: MapPin,       color: 'var(--accent-orange)' },
-    { label: 'Resolved',       value: 3,  icon: CheckCircle,  color: 'var(--accent-green)'  },
-    { label: 'Pending',        value: 1,  icon: Clock,        color: '#FFB347'               },
-    { label: 'Civic Points',   value: 120, icon: Trophy,      color: 'var(--accent-teal)'   },
-  ]
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      setLoading(true)
+      try {
+        const res = await complaintsAPI.getMine(1, 50)
+        const list = res.data?.complaints ?? []
+        if (!mounted) return
+        setComplaints(list.slice(0, 3))
+      } catch (err: any) {
+        toast.error(err?.response?.data?.message || 'Failed to load your recent reports.')
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
+
+  const counts = useMemo(() => {
+    const pending = complaints.filter(c => String(c.status || '').toLowerCase() === 'pending').length
+    const resolved = complaints.filter(c => String(c.status || '').toLowerCase() === 'resolved').length
+    return { pending, resolved }
+  }, [complaints])
+
+  const stats = useMemo(() => ([
+    { label: 'My Reports',     value: complaints.length, icon: MapPin,      color: 'var(--accent-orange)' },
+    { label: 'Resolved',       value: counts.resolved,   icon: CheckCircle, color: 'var(--accent-green)'  },
+    { label: 'Pending',        value: counts.pending,    icon: Clock,       color: '#FFB347'               },
+    { label: 'Civic Points',   value: Number(localStorage.getItem('civic_points') || 0), icon: Trophy, color: 'var(--accent-teal)' },
+  ]), [complaints.length, counts.pending, counts.resolved])
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }}>
@@ -62,7 +88,12 @@ export default function CitizenDashboard() {
                   style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
             {dark ? <Sun size={15} /> : <Moon size={15} />}
           </button>
-          <Link to="/login" onClick={() => localStorage.clear()}
+          <Link to="/login" onClick={() => {
+            localStorage.removeItem('civic_token')
+            localStorage.removeItem('civic_role')
+            localStorage.removeItem('civic_name')
+            localStorage.removeItem('civic_language')
+          }}
                 className="w-9 h-9 rounded-xl flex items-center justify-center border"
                 style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
             <LogOut size={15} />
@@ -175,9 +206,9 @@ export default function CitizenDashboard() {
           </p>
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: 'Total Reports', value: MOCK_KPIS.totalReports },
-              { label: 'Resolved Today', value: MOCK_KPIS.resolvedToday },
-              { label: 'Active Workers', value: MOCK_KPIS.activeWorkers },
+              { label: 'Your Reports', value: complaints.length },
+              { label: 'Resolved', value: counts.resolved },
+              { label: 'Pending', value: counts.pending },
             ].map(s => (
               <div key={s.label} className="text-center">
                 <p className="text-2xl font-bold text-orange-400" style={{ fontFamily: 'Syne, sans-serif' }}>{s.value}</p>

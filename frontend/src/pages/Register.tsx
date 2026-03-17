@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Loader2, ShieldCheck, User } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { authAPI } from '../api'
 
 export default function Register() {
   const [form, setForm]     = useState({ name: '', email: '', password: '', role: 'citizen', phone: '' })
@@ -19,13 +20,35 @@ export default function Register() {
     e.preventDefault()
     if (!form.name || !form.email || !form.password) { toast.error('Fill all required fields'); return }
     setLoad(true)
-    await new Promise(r => setTimeout(r, 1000))
-    setLoad(false)
-    localStorage.setItem('civic_role',  form.role)
-    localStorage.setItem('civic_token', 'mock-token-' + Date.now())
-    localStorage.setItem('civic_name',  form.name)
-    toast.success('Account created! Welcome aboard 🎉')
-    navigate(form.role === 'admin' ? '/admin' : form.role === 'worker' ? '/worker' : '/dashboard')
+    try {
+      const res = await authAPI.register({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        role: form.role,
+        phone: form.phone.trim() || undefined,
+      })
+
+      const token = res.data?.token as string | undefined
+      const user = res.data?.user as { name?: string; role?: string; language?: string } | undefined
+      if (!token || !user?.role) throw new Error('Invalid register response')
+
+      localStorage.setItem('civic_token', token)
+      localStorage.setItem('civic_role', user.role)
+      if (user.name) localStorage.setItem('civic_name', user.name)
+      if (user.language) localStorage.setItem('civic_language', user.language)
+
+      toast.success('Account created!')
+      navigate(user.role === 'admin' ? '/admin' : user.role === 'worker' ? '/worker' : '/dashboard')
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Registration failed. Please try again.'
+      toast.error(msg)
+    } finally {
+      setLoad(false)
+    }
   }
 
   return (

@@ -182,7 +182,7 @@ const ComplaintSchema = new Schema<IComplaint>(
     toJSON: {
       virtuals: true,
       transform: (_doc, ret) => {
-        delete ret.__v;
+        delete (ret as any).__v;
         return ret;
       },
     },

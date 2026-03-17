@@ -18,6 +18,7 @@ import LeafletMap from './LeafletMap'
 import SeverityBadge from './SeverityBadge'
 import VoiceReportButton from './VoiceReportButton'
 import { CATEGORIES, CATEGORY_ICONS } from '../lib/utils'
+import { complaintsAPI } from '../api'
 
 interface AIResult {
   category: string
@@ -39,6 +40,7 @@ export default function ReportForm() {
   const [analyzing, setAnalyzing]   = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted]   = useState(false)
+  const [submittedId, setSubmittedId] = useState<string | null>(null)
   const [dragOver, setDragOver]     = useState(false)
   const fileInputRef                = useRef<HTMLInputElement>(null)
 
@@ -49,39 +51,59 @@ export default function ReportForm() {
     const reader = new FileReader()
     reader.onload = (e) => setPhoto(e.target?.result as string)
     reader.readAsDataURL(file)
-    await analyzePhoto(file)
+    
+    // Auto-analyze photo
+    await analyzeUploadedPhoto(file)
   }
 
-  async function analyzePhoto(_file: File) {
+  // ── AI Auto-Fill ────────────────────────────────────────
+  async function analyzeUploadedPhoto(file: File) {
     setAnalyzing(true)
     try {
-      // ── Production: call Roboflow GARBAGE-POTHOLE model ─────
-      // const formData = new FormData()
-      // formData.append('file', file)
-      // const roboRes = await fetch(`https://detect.roboflow.com/GARBAGE-POTHOLE/3?api_key=${ROBOFLOW_KEY}`, {
-      //   method: 'POST', body: formData
-      // })
-      // const detections = await roboRes.json()
-      //
-      // ── Then call Groq for description ──────────────────────
-      // const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', { ... })
-      //
-      // For hackathon demo: simulate 1.5s AI analysis
-      await new Promise(r => setTimeout(r, 1500))
+      const fd = new FormData()
+      fd.append('photo', file)
+      // Optional hint helps the model craft a better title/description
+      fd.append('hint', title || description || '')
+      
+      const res = await complaintsAPI.analyze(fd)
+      const ai = res.data?.data
+      
+      if (ai) {
+        // Backend categories are Title Case; UI category values are lowercase keys
+        const categoryMap: Record<string, string> = {
+          Pothole: 'pothole',
+          Garbage: 'garbage',
+          'Broken Street Light': 'streetlight',
+          'Water Leakage': 'waterleakage',
+          'Road Damage': 'roadcrack',
+        }
 
-      // Mock result (replace with real Roboflow + Groq response)
-      const mockResults: AIResult[] = [
-        { category: 'pothole',      severity: 78, description: 'Large pothole detected (approx. 0.7m × 0.3m). High vehicular hazard. School within 180m — escalated priority.', isFake: false, confidence: 94 },
-        { category: 'garbage',      severity: 55, description: 'Garbage overflow detected across 3 bins. Sanitation collection overdue by 2 days.', isFake: false, confidence: 88 },
-        { category: 'waterleakage', severity: 85, description: 'Active water pipe leak detected. Significant wastage. Road flooding risk high.', isFake: false, confidence: 91 },
-      ]
-      const r = mockResults[Math.floor(Math.random() * mockResults.length)]
-      setAiResult(r)
-      setCategory(r.category)
-      setDescription(r.description)
-      toast.success('AI analysis complete!')
-    } catch {
-      toast.error('AI analysis failed — please fill in manually.')
+        const uiCategory = categoryMap[String(ai.category)] ?? category
+        const approxSizeText = ai.approxSize ? `\n\nApprox size: ${ai.approxSize}` : ''
+        const keyDetailsText =
+          Array.isArray(ai.keyDetails) && ai.keyDetails.length > 0
+            ? `\n\nKey details:\n- ${ai.keyDetails.slice(0, 5).join('\n- ')}`
+            : ''
+
+        // Set AI card preview (keeps your existing UI intact)
+        setAiResult({
+          category: String(ai.category ?? uiCategory),
+          severity: Number(ai.severityScore ?? 0),
+          description: String(ai.description ?? '') + approxSizeText + keyDetailsText,
+          isFake: Boolean(ai.isFake),
+          fakeReason: ai.fakeReason,
+          confidence: Number(ai.confidence ?? 0) || 0,
+        })
+
+        // Auto-fill form fields (only overwrite if user hasn't typed)
+        if (ai.title && !title) setTitle(String(ai.title))
+        if (ai.description && !description) setDescription(String(ai.description))
+        if (uiCategory && !category) setCategory(uiCategory)
+        toast.success('AI has automatically filled in the details based on the photo!', { id: 'ai-fill' })
+      }
+    } catch (err: any) {
+      console.error('AI Analysis failed:', err)
+      toast.error('AI preview failed. You can still submit the report.')
     } finally {
       setAnalyzing(false)
     }
@@ -131,15 +153,49 @@ export default function ReportForm() {
   // ── Submit ─────────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!photo)    { toast.error('Please upload a photo'); return }
+    if (!photoFile) { toast.error('Please upload a photo'); return }
     if (!location) { toast.error('Please set a location'); return }
     if (!title)    { toast.error('Please add a title'); return }
 
     setSubmitting(true)
-    await new Promise(r => setTimeout(r, 1500)) // Simulate API call
-    setSubmitting(false)
-    setSubmitted(true)
-    toast.success('Report submitted successfully! +' + (aiResult?.severity ?? 30) + ' Civic Points 🎉')
+    try {
+      const fd = new FormData()
+      fd.append('photo', photoFile)
+      fd.append('title', title)
+      fd.append('description', description || title)
+      fd.append('category', category || 'Road Damage')
+      fd.append('lat', String(location.lat))
+      fd.append('lng', String(location.lng))
+
+      const res = await complaintsAPI.report(fd)
+      const complaintId = res.data?.complaint?.id as string | undefined
+
+      const ai = res.data?.aiAnalysis
+      if (ai) {
+        setAiResult({
+          category: (ai.autoCategory ?? category ?? 'other') as string,
+          severity: Number(ai.severityScore ?? 0),
+          description: (ai.description ?? description ?? '') as string,
+          isFake: Number(ai.fakeScore ?? 0) >= 70,
+          fakeReason: Number(ai.fakeScore ?? 0) >= 70 ? 'High fake/spam probability' : undefined,
+          confidence: 90,
+        })
+        if (ai.autoCategory && !category) setCategory(ai.autoCategory)
+        if (ai.description && !description) setDescription(ai.description)
+      }
+
+      setSubmittedId(complaintId ?? null)
+      setSubmitted(true)
+      toast.success(res.data?.message ?? 'Report submitted successfully!')
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to submit report.'
+      toast.error(msg)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (submitted) {
@@ -157,10 +213,8 @@ export default function ReportForm() {
           Report Submitted!
         </h2>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          AI has assigned Severity {aiResult?.severity ?? 30} · Your complaint ID: C{Date.now().toString().slice(-4)}
-        </p>
-        <p className="text-sm font-semibold" style={{ color: 'var(--accent-green)' }}>
-          +{aiResult?.severity ?? 30} Civic Points earned 🏆
+          AI has assigned Severity {aiResult?.severity ?? 0}
+          {submittedId ? ` · Your complaint ID: ${submittedId}` : ''}
         </p>
         <button onClick={() => { setSubmitted(false); setPhoto(null); setAiResult(null); setTitle(''); setLocation(null) }}
                 className="btn-primary mt-2">
@@ -245,10 +299,6 @@ export default function ReportForm() {
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-xs font-semibold text-green-400">AI Analysis</span>
                     <SeverityBadge score={aiResult.severity} size="sm" />
-                    <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                          style={{ background: 'rgba(0,180,216,0.15)', color: 'var(--accent-teal)' }}>
-                      {aiResult.confidence}% confident
-                    </span>
                   </div>
                   <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                     {aiResult.description}

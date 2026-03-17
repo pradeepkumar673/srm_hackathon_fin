@@ -1,14 +1,39 @@
 // ─────────────────────────────────────────────────────────────
 // pages/Leaderboard.tsx  – Public civic leaderboard
 // ─────────────────────────────────────────────────────────────
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { ChevronLeft, Trophy } from 'lucide-react'
-import { MOCK_LEADERBOARD } from '../lib/utils'
+import toast from 'react-hot-toast'
+import { authAPI } from '../api'
 
 export default function Leaderboard() {
-  const top3    = MOCK_LEADERBOARD.slice(0, 3)
-  const others  = MOCK_LEADERBOARD.slice(3)
+  const [rows, setRows] = useState<any[]>([])
+  const top3 = rows.slice(0, 3)
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const res = await authAPI.getLeaderboard()
+        const lb = (res.data?.leaderboard ?? []) as any[]
+        if (!mounted) return
+        // Normalize for UI (keep existing props names)
+        setRows(lb.map((u) => ({
+          rank: u.rank,
+          name: u.name,
+          points: u.civicPoints,
+          reports: '-',
+          resolved: '-',
+          badge: u.rank === 1 ? '🏆' : u.rank === 2 ? '🥈' : u.rank === 3 ? '🥉' : '⭐',
+        })))
+      } catch (err: any) {
+        toast.error(err?.response?.data?.message || 'Failed to load leaderboard.')
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }}>
@@ -81,12 +106,12 @@ export default function Leaderboard() {
 
         {/* Full table */}
         <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-          {MOCK_LEADERBOARD.map((entry, i) => (
+          {rows.map((entry, i) => (
             <motion.div key={entry.rank}
                         initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
                         className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/5"
                         style={{
-                          borderBottom: i < MOCK_LEADERBOARD.length - 1 ? '1px solid var(--border)' : 'none',
+                          borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none',
                           background: (entry as { isMe?: boolean }).isMe ? 'rgba(255,107,0,0.05)' : 'transparent',
                         }}>
               <span className="text-base w-5 text-center">{entry.badge}</span>

@@ -49,8 +49,11 @@ import {
 // LAZY Groq Client – FIXED
 // ==============================================================
 
-/** Groq model as specified in the requirements */
-const GROQ_MODEL = 'llama-3.1-70b-versatile';
+/**
+ * Groq model (keep configurable).
+ * Default updated because `llama-3.1-70b-versatile` is decommissioned.
+ */
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 /** Module-level singleton – null until first actual API call */
 let _groqClient: Groq | null = null;
@@ -102,6 +105,16 @@ export interface GroqAnalysisResult {
   severity: number;
   tags: string[];
   tamilDescription: string;
+}
+
+export interface GroqPrefillResult {
+  title: string;
+  category: string;
+  description: string;
+  severity: number;
+  tags: string[];
+  approxSize: string;
+  keyDetails: string[];
 }
 
 export interface WeatherData {
@@ -249,6 +262,109 @@ Severity guide: 0-30 minor, 31-60 moderate, 61-80 serious, 81-100 critical.`;
     return parsed;
   } catch (err) {
     console.error('❌ Groq analysis error:', err instanceof Error ? err.message : err);
+    return defaultResult;
+  }
+}
+
+// ==============================================================
+// FEATURE #1 – Groq LLM Prefill (upload-time auto-fill helper)
+// ==============================================================
+/**
+ * callGroqPrefill – Used for upload-time form auto-fill.
+ * Returns a suggested title + structured details such as approx size.
+ * This is intentionally separate from callGroqAnalysis so the main
+ * pipeline prompt/response shape stays unchanged.
+ */
+export async function callGroqPrefill(
+  detections: RoboflowDetection[],
+  userHint: string,
+  language: 'en' | 'ta' = 'en'
+): Promise<GroqPrefillResult> {
+  const defaultResult: GroqPrefillResult = {
+    title: userHint || 'Civic issue report',
+    category: 'Road Damage',
+    description: userHint || '',
+    severity: 30,
+    tags: [],
+    approxSize: 'Unknown (insufficient visual signal)',
+    keyDetails: [],
+  };
+
+  const groq = getGroq();
+  if (!groq) return defaultResult;
+
+  const detectionsText =
+    detections.length > 0
+      ? detections
+          .map(
+            (d) =>
+              d.class +
+              ' (confidence: ' +
+              (d.confidence * 100).toFixed(1) +
+              '%, bbox: ' +
+              Math.round(d.width) +
+              'x' +
+              Math.round(d.height) +
+              'px)'
+          )
+          .join(', ')
+      : 'No objects detected by vision model';
+
+  const prompt = [
+    'You are a civic AI analyst helping pre-fill a report form.',
+    'Given Roboflow detections: ' + detectionsText + '.',
+    '',
+    'Task:',
+    '- Choose ONE category from: Pothole, Garbage, Broken Street Light, Water Leakage, Road Damage',
+    '- Suggest a concise title (max 70 chars)',
+    '- Write a 1-2 sentence description in ' + (language === 'ta' ? 'Tamil' : 'English'),
+    '- Provide an approximate size string ONLY if you have enough signal from bbox size. If not, say "Unknown".',
+    '  If category is Pothole or Road Damage, approxSize should look like: "Approx. medium (bbox 220x140px) — size unknown in meters"',
+    '- Provide severity 0-100 (rough)',
+    '- Provide 3-6 bullet keyDetails strings (short, factual, based on detections)',
+    '',
+    'User hint: "' + userHint + '"',
+    '',
+    'Return ONLY this JSON (no markdown):',
+    '{',
+    '  "title": "<string>",',
+    '  "category": "<one of: Pothole, Garbage, Broken Street Light, Water Leakage, Road Damage>",',
+    '  "description": "<string>",',
+    '  "approxSize": "<string>",',
+    '  "severity": <integer 0-100>,',
+    '  "tags": ["<tag1>", "<tag2>"],',
+    '  "keyDetails": ["<detail1>", "<detail2>"]',
+    '}',
+  ].join('\\n');
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2,
+      max_tokens: 500,
+    });
+
+    const rawText = completion.choices[0]?.message?.content || '';
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON found in Groq response');
+
+    const parsed = JSON.parse(jsonMatch[0]) as GroqPrefillResult;
+
+    const validCategories = [
+      'Pothole', 'Garbage', 'Broken Street Light', 'Water Leakage', 'Road Damage',
+    ];
+    if (!validCategories.includes(parsed.category)) parsed.category = 'Road Damage';
+    parsed.severity = Math.max(0, Math.min(100, parsed.severity || 30));
+    parsed.title = (parsed.title || defaultResult.title).slice(0, 70);
+    parsed.description = parsed.description || defaultResult.description;
+    parsed.approxSize = parsed.approxSize || defaultResult.approxSize;
+    parsed.tags = Array.isArray(parsed.tags) ? parsed.tags.slice(0, 8) : [];
+    parsed.keyDetails = Array.isArray(parsed.keyDetails) ? parsed.keyDetails.slice(0, 8) : [];
+
+    return parsed;
+  } catch (err) {
+    console.error('❌ Groq prefill error:', err instanceof Error ? err.message : err);
     return defaultResult;
   }
 }

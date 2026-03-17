@@ -97,7 +97,7 @@ const WorkerSchema = new Schema<IWorker>(
     toJSON: {
       virtuals: true,
       transform: (_doc, ret) => {
-        delete ret.__v;
+        delete (ret as any).__v;
         return ret;
       },
     },
@@ -176,7 +176,7 @@ const NotificationSchema = new Schema<INotification>(
     toJSON: {
       virtuals: true,
       transform: (_doc, ret) => {
-        delete ret.__v;
+        delete (ret as any).__v;
         return ret;
       },
     },

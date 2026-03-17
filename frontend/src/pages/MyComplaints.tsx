@@ -2,33 +2,56 @@
 // pages/MyComplaints.tsx
 // Filterable list with live Socket.io status updates
 // ─────────────────────────────────────────────────────────────
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Filter, Search } from 'lucide-react'
 import SeverityBadge from '../components/SeverityBadge'
-import { MOCK_COMPLAINTS, statusClass, timeAgo, CATEGORY_ICONS } from '../lib/utils'
+import { statusClass, timeAgo, CATEGORY_ICONS } from '../lib/utils'
 import { useSocket } from '../hooks/useSocket'
 import toast from 'react-hot-toast'
+import { complaintsAPI, getUploadUrl } from '../api'
 
 const STATUSES = ['all', 'pending', 'assigned', 'inprogress', 'resolved', 'rejected']
 
 export default function MyComplaints() {
-  const [complaints, setComplaints] = useState(MOCK_COMPLAINTS)
+  const [complaints, setComplaints] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [statusFilter, setFilter]   = useState('all')
   const [search, setSearch]         = useState('')
 
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      setLoading(true)
+      try {
+        const res = await complaintsAPI.getMine(1, 50)
+        const list = (res.data?.complaints ?? []) as any[]
+        if (!mounted) return
+        setComplaints(list)
+      } catch (err: any) {
+        const msg = err?.response?.data?.message || 'Failed to load your reports.'
+        toast.error(msg)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
+
   useSocket({
     onStatusUpdate: (d) => {
-      setComplaints(prev => prev.map(c => c.id === d.id ? { ...c, status: d.status, updatedAt: d.updatedAt } : c))
+      setComplaints(prev => prev.map(c => (c._id === d.id || c.id === d.id) ? { ...c, status: d.status, updatedAt: d.updatedAt } : c))
       toast.success(`#${d.id} status → ${d.status}`)
     },
   })
 
   const filtered = complaints.filter(c => {
-    const matchStatus = statusFilter === 'all' || c.status === statusFilter
-    const matchSearch = c.title.toLowerCase().includes(search.toLowerCase()) ||
-                        c.location.address.toLowerCase().includes(search.toLowerCase())
+    const status = String(c.status || '').toLowerCase()
+    const matchStatus = statusFilter === 'all' || status === statusFilter
+    const address = String(c.location?.address || '')
+    const matchSearch = String(c.title || '').toLowerCase().includes(search.toLowerCase()) ||
+                        address.toLowerCase().includes(search.toLowerCase())
     return matchStatus && matchSearch
   })
 
@@ -72,7 +95,11 @@ export default function MyComplaints() {
         </div>
 
         {/* List */}
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-sm">Loading…</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
             <Filter size={32} className="mx-auto mb-2 opacity-30" />
             <p className="text-sm">No reports found</p>
@@ -80,15 +107,15 @@ export default function MyComplaints() {
         ) : (
           <div className="space-y-3">
             {filtered.map((c, i) => (
-              <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
-                <Link to={`/complaints/${c.id}`}>
+              <motion.div key={c._id || c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
+                <Link to={`/complaints/${c._id || c.id}`}>
                   <div className="p-4 rounded-2xl transition-all hover:scale-[1.01]"
                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                     <div className="flex gap-3">
                       {/* Photo thumbnail */}
                       <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0"
                            style={{ background: 'var(--bg-secondary)' }}>
-                        <img src={c.photo} alt="" className="w-full h-full object-cover" />
+                        <img src={getUploadUrl(c.photoUrl || c.photo)} alt="" className="w-full h-full object-cover" />
                       </div>
 
                       <div className="flex-1 min-w-0">
@@ -98,25 +125,27 @@ export default function MyComplaints() {
                         </div>
 
                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusClass(c.status)}`}>
-                            {c.status}
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusClass(String(c.status || 'pending'))}`}>
+                            {String(c.status || 'pending')}
                           </span>
-                          <SeverityBadge score={c.severity} size="sm" showScore={false} />
-                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{CATEGORY_ICONS[c.category]}</span>
+                          <SeverityBadge score={Number(c.severityScore ?? c.severity ?? 0)} size="sm" showScore={false} />
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            {CATEGORY_ICONS[String(c.category || '').toLowerCase()] ?? '📋'}
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-3 mt-1.5">
                           <span className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                            📍 {c.location.address.split(',')[0]}
+                            📍 {String(c.location?.address || '').split(',')[0]}
                           </span>
                           <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
-                            {timeAgo(c.createdAt)}
+                            {timeAgo(c.createdAt || new Date().toISOString())}
                           </span>
                         </div>
 
-                        {c.communityConfirms > 0 && (
+                        {Number(c.confirmations ?? c.communityConfirms ?? 0) > 0 && (
                           <p className="text-xs mt-1" style={{ color: 'var(--accent-teal)' }}>
-                            👥 {c.communityConfirms} community confirmations
+                            👥 {Number(c.confirmations ?? c.communityConfirms ?? 0)} community confirmations
                           </p>
                         )}
                       </div>
