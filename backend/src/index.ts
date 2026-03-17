@@ -263,7 +263,9 @@ const startServer = async (): Promise<void> => {
       console.log('╠════════════════════════════════════════╣');
       console.log('║  🤖 AI Features Active:                ║');
       console.log('║    ✅ Roboflow Vision Detection         ║');
-      console.log('║    ✅ Groq LLM (llama-3.1-70b)         ║');
+      const groqModel = (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile');
+      const modelLabel = groqModel.length > 24 ? groqModel.slice(0, 24) : groqModel.padEnd(24);
+      console.log(`║    ✅ Groq LLM (${modelLabel}) ║`);
       console.log('║    ✅ HuggingFace Fake Detector         ║');
       console.log('║    ✅ OpenWeatherMap Forecast           ║');
       console.log('║    ✅ Nominatim Geocoding               ║');

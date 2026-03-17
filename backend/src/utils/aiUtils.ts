@@ -411,6 +411,12 @@ export async function callFakeDetector(imagePath: string): Promise<number> {
     console.log(`🔍 Fake detection score: ${fakeScore}%`);
     return fakeScore;
   } catch (err) {
+    // HF sometimes returns 410 when a model is not available on the hosted Inference API
+    const status = (err as any)?.response?.status;
+    if (status === 410) {
+      console.warn('⚠️  HuggingFace Inference returned 410 – skipping fake detection');
+      return 0;
+    }
     console.error('❌ HuggingFace fake detector error:', err instanceof Error ? err.message : err);
     return 0;
   }
